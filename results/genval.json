@@ -1,0 +1,1 @@
+[{"graph": "K2", "outcomes": 4, "tv": 0.0018850000000000117, "mean_wait": 2.994270742614108, "exact_wait": 3.0}, {"graph": "P3", "outcomes": 6, "tv": 0.001979999999999961, "mean_wait": 0.9980902475380359, "exact_wait": 1.0}, {"graph": "K3", "outcomes": 9, "tv": 0.0013100000000000056, "mean_wait": 0.748567685653527, "exact_wait": 0.75}]
