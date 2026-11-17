@@ -3,6 +3,10 @@
 Code for *Triadic and Assortative Structure of Absorbing States in the Axelrod Model* (M. Boudourides, 2026),
 arXiv:2611.18719, [https://doi.org/10.48550/arXiv.2611.18719](https://doi.org/10.48550/arXiv.2611.18719).
 
+**Interactive simulator.** https://mboudour.github.io/axelrod-absorbing-states/ (source: `docs/index.html`). It runs the
+model on a chosen network and shows, side by side, the graph coloured by culture and the quotient graph of cultural domains,
+with play, step and scrub controls, the edge and triangle composition over time, and the theorem checks at absorption.
+
 **Setting.** Axelrod's model of cultural dissemination on a finite graph G = (V, E): each vertex carries a
 culture in [q]^F, neighbours interact at a rate proportional to their overlap (number of shared features),
 and an interaction copies one disagreeing feature (continuous-time, edge-driven version of Lanchier, 2012).
@@ -32,6 +36,7 @@ scripts/05_tables.py               LaTeX table bodies (written to paper/tables/,
 scripts/06_fig_karate.py           karate-club absorbing state and its domain quotient (pygraphviz)
 scripts/07_fig_sweep.py            rewiring-sweep figure, cluster-bootstrap bands
 scripts/08_lattice_animation.py    MP4 animation on a triangular lattice (not part of the paper)
+docs/index.html                    interactive simulator (GitHub Pages)
 tests/test_axelrod.py              unit tests (counting formula, q = 2 identity, closed forms, simulator)
 results/                           JSON outputs used in the paper
 ```

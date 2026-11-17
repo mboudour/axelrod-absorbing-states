@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Axelrod Model: Absorbing-State Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: instrument panel. Controls left, network centre, readouts right; stacks on narrow screens. */
+  --paper: #f2f4f3;
+  --panel: #fbfcfb;
+  --ink: #17212a;
+  --muted: #5b6871;
+  --rule: #cdd6da;
+  --accent: #b2462e;
+  --good: #2f6f4f;
+  --warn: #9a6a12;
+  --display: "Spectral", "Georgia", serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #10161b; --panel: #161e24; --ink: #e2e8eb; --muted: #93a1aa;
+    --rule: #2b3842; --accent: #e27652; --good: #6fbf93; --warn: #e0b154; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #10161b; --panel: #161e24; --ink: #e2e8eb; --muted: #93a1aa;
+  --rule: #2b3842; --accent: #e27652; --good: #6fbf93; --warn: #e0b154; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--body); }
+header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding: 14px 20px 10px; border-bottom: 1px solid var(--rule); }
+header h1 { font: 600 22px/1.15 var(--display); margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.app { display: grid; grid-template-columns: 290px minmax(0, 1fr) minmax(0, 0.95fr); gap: 14px; padding: 14px 20px 20px; min-height: calc(100% - 60px); }
+@media (max-width: 1180px) { .app { grid-template-columns: 290px minmax(0, 1fr); } .readouts { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .app { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; }
+aside { display: flex; flex-direction: column; gap: 12px; }
+h2 { font: 600 15px/1.2 var(--display); margin: 0 0 8px; letter-spacing: 0.01em; }
+label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+select, input[type="number"] { width: 100%; font: 13px var(--body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 6px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.val { font: 12px var(--mono); color: var(--ink); min-width: 4.5em; text-align: right; flex: 0 0 auto; }
+button { font: 500 13px var(--body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button:hover { border-color: var(--ink); }
+button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:disabled, select:disabled, input:disabled { opacity: 0.45; cursor: not-allowed; }
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.viewbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.viewbar .seg { width: 440px; max-width: 100%; }
+.inl { display: inline-flex; gap: 6px; align-items: center; margin: 0; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 12px var(--mono); padding: 3px 8px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); white-space: nowrap; }
+.chip b { font-weight: 500; }
+.chip.good { border-color: var(--good); color: var(--good); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.crit { border-color: var(--accent); color: var(--accent); }
+canvas { display: block; width: 100%; }
+.netwrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.app.both .netwrap { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.vlab { display: none; font: 500 12px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 4px; }
+.app.both .vlab { display: block; }
+.app.both { grid-template-columns: 290px minmax(0, 1fr); }
+.app.both .readouts { grid-column: 1 / -1; }
+@media (max-width: 1000px) { .app.both .netwrap { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .app.both { grid-template-columns: minmax(0, 1fr); } #net, #net2 { height: 420px; } }
+#net2 { height: 520px; border-radius: 4px; background: var(--paper); cursor: pointer; }
+#net { height: 520px; border-radius: 4px; background: var(--paper); cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.timebar { display: flex; gap: 8px; align-items: center; }
+.timebar input { flex: 1; }
+.caption { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 75ch; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 10px; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabpanel[hidden] { display: none; }
+#traj, #plane { height: 420px; }
+.diag canvas { height: 118px; margin-bottom: 6px; }
+.diag h3, .notes h3 { font: 500 12px var(--body); color: var(--muted); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+.notes p { margin: 0 0 9px; max-width: 65ch; }
+.notes .ref { font: 12px var(--mono); color: var(--muted); }
+.inspect { font: 12px var(--mono); white-space: pre-wrap; color: var(--ink); margin: 0; }
+.hidden { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.netwrap { grid-template-columns: minmax(0, 1fr); }
+#netbox.hidden, #net2box.hidden { display: none; }
+.diag canvas { height: 150px; }
+#cE, #cT { height: 190px; }
+.small { font-size: 12px; color: var(--muted); }
+footer { padding: 0 20px 18px; color: var(--muted); font-size: 12px; }
+footer a, .notes a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Axelrod's model of cultural dissemination on networks</h1>
+  <p>Each vertex carries a culture of F features with q values each. Neighbours interact at a rate proportional to the number of features they share, and an interaction copies one disagreeing feature. The dynamics stop when every edge is <b>interior</b> (all features shared) or <b>boundary</b> (nothing shared). The left view keeps the network fixed and colours vertices by culture; the right view shows the cultural domains as a quotient graph.</p>
+</header>
+
+<div class="app both">
+  <aside>
+    <section class="card" aria-labelledby="h-scen">
+      <h2 id="h-scen">Scenario</h2>
+      <label for="scenario">Example or exploration</label>
+      <select id="scenario">
+        <optgroup label="Examples from the paper">
+          <option value="fig1" selected>Fig. 1 · karate club, F = 3, q = 6</option>
+          <option value="tri">Thm 4.2 · triangular lattice, F = 3, q = 10</option>
+          <option value="ws">Fig. 3 · ring lattice / Watts–Strogatz, q = 12</option>
+          <option value="cave">Cor. 5.8 · caveman graph, q = 12</option>
+          <option value="q2">Cor. 5.8(ii) · q = 2, bipartite quotient</option>
+          <option value="interface">Prop. 3.6 · one interface on a path</option>
+          <option value="shared">Prop. 3.7 · one feature shared by all</option>
+        </optgroup>
+        <optgroup label="Explore">
+          <option value="explore">Your own network</option>
+        </optgroup>
+      </select>
+    </section>
+
+    <section class="card" aria-labelledby="h-net">
+      <h2 id="h-net">Network</h2>
+      <label for="gtype">Graph</label>
+      <select id="gtype">
+        <option value="karate">Zachary's karate club (34)</option>
+        <option value="florentine">Florentine families (15)</option>
+        <option value="lesmis">Les Misérables (77)</option>
+        <option value="tri">Triangular lattice</option>
+        <option value="grid">Square grid</option>
+        <option value="ws">Watts–Strogatz (k = 6)</option>
+        <option value="er">Erdős–Rényi (mean degree 6)</option>
+        <option value="cave">Connected caveman (caves of 10)</option>
+        <option value="cycle">Cycle</option>
+        <option value="path">Path</option>
+        <option value="complete">Complete graph (≤ 60)</option>
+      </select>
+      <div id="nRow"><label for="n">Vertices (approximate for lattices)</label>
+      <div class="row"><input id="n" type="range" min="10" max="400" step="2" value="100"><span class="val" id="nVal">100</span></div></div>
+      <div id="pRow" class="hidden"><label for="p">Rewiring probability p</label>
+      <div class="row"><input id="p" type="range" min="0" max="1" step="0.01" value="0"><span class="val" id="pVal">0</span></div></div>
+      <p class="small" id="netinfo"></p>
+    </section>
+
+    <section class="card" aria-labelledby="h-mod">
+      <h2 id="h-mod">Model</h2>
+      <label for="F">Features F</label>
+      <div class="row"><input id="F" type="range" min="2" max="6" step="1" value="3"><span class="val" id="FVal">3</span></div>
+      <label for="q">Values per feature q</label>
+      <div class="row"><input id="q" type="range" min="2" max="20" step="1" value="6"><span class="val" id="qVal">6</span></div>
+      <label for="init">Initial cultures</label>
+      <select id="init">
+        <option value="random" selected>Independent and uniform</option>
+        <option value="shared">Feature 1 shared by all (Prop. 3.7)</option>
+        <option value="interface">Two blocks, one differing feature (path only, Prop. 3.6)</option>
+      </select>
+      <label for="seed">Random seed</label>
+      <div class="row"><input id="seed" type="number" min="1" value="2"><button id="reseed" style="flex:0 0 auto">New</button></div>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <div class="card">
+      <div class="viewbar"><div class="seg" role="group" aria-label="Main view"><button id="vBo" aria-pressed="true">Both side by side</button><button id="vGr" aria-pressed="false">Graph</button><button id="vQu" aria-pressed="false">Domain quotient</button></div>
+        <label class="inl"><input id="autoplay" type="checkbox" checked> play on load</label></div>
+      <div class="chips" id="chips" aria-live="polite"></div>
+      <div class="netwrap">
+        <div id="netbox"><div class="vlab">Graph, coloured by culture</div><canvas id="net" aria-label="Network with vertices coloured by culture"></canvas></div>
+        <div id="net2box"><div class="vlab">Domain quotient</div><canvas id="net2" aria-label="Quotient graph of cultural domains"></canvas></div>
+      </div>
+      <div class="legend">
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2"/></svg>interior edge (all F features shared)</span>
+        <span style="color:var(--accent)"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2.4"/></svg>active edge (some shared)</span>
+        <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 3" opacity=".7"/></svg>boundary edge (nothing shared)</span>
+        <span>colour = culture (click a vertex to read it)</span>
+      </div>
+      <p class="caption" id="caption"></p>
+      <p class="caption" id="qcap"></p>
+    </div>
+    <div class="card">
+      <div class="timebar">
+        <button class="primary" id="play" style="flex:0 0 auto">Play</button>
+        <button id="step" style="flex:0 0 auto">Step</button>
+        <button id="restart" style="flex:0 0 auto">To t = 0</button>
+        <button id="toEnd" style="flex:0 0 auto">To absorption</button>
+        <input id="time" type="range" min="0" max="0" step="1" value="0" aria-label="Time">
+        <span class="val" id="timeVal">t = 0</span>
+      </div>
+      <label for="speed">Playback speed (frames per second)</label>
+      <div class="row"><input id="speed" type="range" min="2" max="60" step="1" value="20"><span class="val" id="speedVal">20</span></div>
+    </div>
+    <div class="card">
+      <h2>Selected vertex</h2>
+      <pre class="inspect" id="inspect">Click a vertex in the graph view to inspect its culture and its neighbours.</pre>
+    </div>
+  </main>
+
+  <section class="card readouts" aria-label="Readouts">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-et" aria-selected="true" aria-controls="p-et">Edges and triangles</button>
+      <button role="tab" id="tab-da" aria-selected="false" aria-controls="p-da">Domains and assortativity</button>
+      <button role="tab" id="tab-nt" aria-selected="false" aria-controls="p-nt">Notes</button>
+    </div>
+    <div class="tabpanel diag" id="p-et" role="tabpanel">
+      <h3>Fractions of interior, active and boundary edges</h3><canvas id="cE"></canvas>
+      <h3>Fractions of triangles by number of boundary edges</h3><canvas id="cT"></canvas>
+      <p class="caption" id="etCaption"></p>
+    </div>
+    <div class="tabpanel diag" id="p-da" role="tabpanel" hidden>
+      <h3>Numbers of domains and of cultures</h3><canvas id="cD"></canvas>
+      <h3>Assortativity of features, cultures and domains</h3><canvas id="cR"></canvas>
+      <h3>Total pairwise overlap Q, normalised</h3><canvas id="cQ"></canvas>
+      <p class="caption" id="daCaption"></p>
+    </div>
+    <div class="tabpanel notes" id="p-nt" role="tabpanel" hidden>
+      <h3>Model</h3>
+      <p>Each edge is activated at rate one; one endpoint is chosen at random and, with probability equal to the fraction of shared features, copies one feature on which the two disagree (the continuous-time version of Lanchier, 2012). The simulation is exact: an active edge with overlap o is selected at rate o/F.</p>
+      <h3>Results illustrated</h3>
+      <p>In an absorbing state no triangle carries exactly one boundary edge, and the interior graph is a disjoint union of induced subgraphs (Lemma 4.1, Theorem 4.2), so ω(G_I) ≤ ω(G) (Corollary 4.3). A partition into connected blocks is a domain partition exactly when its quotient is properly q-colourable; each feature supplies such a colouring (Theorem 5.1), and the number of absorbing states is a sum of chromatic polynomials (Corollary 5.4). The feature, culture and domain assortativities share the interior fraction and satisfy r_f ≤ r_cult ≤ r_dom (Theorem 6.1). The total overlap Q is a submartingale, which bounds the expected absorption time (Theorem 3.2, Corollary 3.3).</p>
+      <h3>Paper and code</h3>
+      <p>M. Boudourides, <i>Triadic and Assortative Structure of Absorbing States in the Axelrod Model</i>, <a href="https://doi.org/10.48550/arXiv.2611.18719">arXiv:2611.18719</a> (2026).</p>
+      <p class="ref">Code: <a href="https://github.com/mboudour/axelrod-absorbing-states">github.com/mboudour/axelrod-absorbing-states</a></p>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ---------- random numbers ---------- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const randInt = (rng, k) => Math.floor(rng() * k);
+
+/* ---------- graphs ---------- */
+function finishGraph(n, edgeList, pos, name, labels) {
+  const seen = new Set(), edges = [];
+  for (const [a, b] of edgeList) {
+    if (a === b) continue;
+    const u = Math.min(a, b), v = Math.max(a, b), key = u * 100000 + v;
+    if (!seen.has(key)) { seen.add(key); edges.push([u, v]); }
+  }
+  const adj = Array.from({ length: n }, () => []);
+  edges.forEach(([u, v], k) => { adj[u].push([v, k]); adj[v].push([u, k]); });
+  const eidx = new Map(); edges.forEach(([u, v], k) => eidx.set(u * 100000 + v, k));
+  const ek = (a, b) => eidx.get(Math.min(a, b) * 100000 + Math.max(a, b));
+  const nb = adj.map((l) => new Set(l.map((x) => x[0])));
+  const tris = [];
+  for (const [u, v] of edges) for (const w of nb[u]) if (w > v && nb[v].has(w)) tris.push([ek(u, v), ek(v, w), ek(u, w)]);
+  const deg = adj.map((l) => l.length);
+  return { n, m: edges.length, edges, adj, deg, tris, pos, name, labels: labels || null, nb };
+}
+function largestComponent(n, edges) {
+  const p = Array.from({ length: n }, (_, i) => i);
+  const f = (x) => { while (p[x] !== x) { p[x] = p[p[x]]; x = p[x]; } return x; };
+  for (const [u, v] of edges) p[f(u)] = f(v);
+  const cnt = new Map(); for (let i = 0; i < n; i++) cnt.set(f(i), (cnt.get(f(i)) || 0) + 1);
+  let best = -1, bc = -1; for (const [r, c] of cnt) if (c > bc) { bc = c; best = r; }
+  const keep = []; const map = new Map();
+  for (let i = 0; i < n; i++) if (f(i) === best) { map.set(i, keep.length); keep.push(i); }
+  return { keep, map, edges: edges.filter(([u, v]) => map.has(u) && map.has(v)).map(([u, v]) => [map.get(u), map.get(v)]) };
+}
+const circle = (n, r = 0.5, cx = 0.5, cy = 0.5, off = -Math.PI / 2) => Array.from({ length: n }, (_, i) => [cx + r * Math.cos(off + 2 * Math.PI * i / n), cy + r * Math.sin(off + 2 * Math.PI * i / n)]);
+function triLattice(rows, cols) {
+  const id = (r, c) => r * cols + c, E = [], pos = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    pos.push([c + (r % 2 ? 0.5 : 0), r * Math.sqrt(3) / 2]);
+    if (c + 1 < cols) E.push([id(r, c), id(r, c + 1)]);
+    if (r + 1 < rows) {
+      E.push([id(r, c), id(r + 1, c)]);
+      const c2 = r % 2 ? c + 1 : c - 1;
+      if (c2 >= 0 && c2 < cols) E.push([id(r, c), id(r + 1, c2)]);
+    }
+  }
+  return finishGraph(rows * cols, E, pos, `triangular lattice ${rows}×${cols}`);
+}
+function gridGraph(rows, cols) {
+  const id = (r, c) => r * cols + c, E = [], pos = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    pos.push([c, r]);
+    if (c + 1 < cols) E.push([id(r, c), id(r, c + 1)]);
+    if (r + 1 < rows) E.push([id(r, c), id(r + 1, c)]);
+  }
+  return finishGraph(rows * cols, E, pos, `grid ${rows}×${cols}`);
+}
+function wattsStrogatz(n, k, p, rng) {
+  const E = [], S = new Set(); const key = (a, b) => Math.min(a, b) * 100000 + Math.max(a, b);
+  for (let i = 0; i < n; i++) for (let j = 1; j <= k / 2; j++) { const v = (i + j) % n; E.push([i, v]); S.add(key(i, v)); }
+  for (let t = 0; t < E.length; t++) {
+    if (rng() < p) {
+      const u = E[t][0]; let w, tries = 0;
+      do { w = randInt(rng, n); tries++; } while ((w === u || S.has(key(u, w))) && tries < 100);
+      if (tries < 100) { S.delete(key(E[t][0], E[t][1])); E[t] = [u, w]; S.add(key(u, w)); }
+    }
+  }
+  const lc = largestComponent(n, E); const pos0 = circle(n);
+  return finishGraph(lc.keep.length, lc.edges, lc.keep.map((i) => pos0[i]), p > 0 ? `Watts–Strogatz n=${n}, k=${k}, p=${p}` : `ring lattice n=${n}, k=${k}`);
+}
+function erdosRenyi(n, meanDeg, rng) {
+  const E = [], pr = meanDeg / (n - 1);
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (rng() < pr) E.push([i, j]);
+  const lc = largestComponent(n, E);
+  return finishGraph(lc.keep.length, lc.edges, forceLayout(lc.keep.length, lc.edges, rng), `Erdős–Rényi n=${lc.keep.length}, mean degree ${meanDeg}`);
+}
+function caveman(c, k) {
+  const E = [], pos = [];
+  for (let a = 0; a < c; a++) {
+    const cx = 0.5 + 0.38 * Math.cos(2 * Math.PI * a / c - Math.PI / 2), cy = 0.5 + 0.38 * Math.sin(2 * Math.PI * a / c - Math.PI / 2);
+    const rr = 0.42 * Math.sin(Math.PI / c) * 0.8;
+    for (let i = 0; i < k; i++) pos.push([cx + rr * Math.cos(2 * Math.PI * i / k), cy + rr * Math.sin(2 * Math.PI * i / k)]);
+    for (let i = 0; i < k; i++) for (let j = i + 1; j < k; j++) E.push([a * k + i, a * k + j]);
+  }
+  // as in networkx.connected_caveman_graph: in each cave remove edge (0,1) and join vertex 0 to vertex 1 of the next cave
+  const R = new Set(); for (let a = 0; a < c; a++) R.add((a * k) * 100000 + (a * k + 1));
+  const E2 = E.filter(([u, v]) => !R.has(u * 100000 + v));
+  for (let a = 0; a < c; a++) E2.push([a * k, ((a + 1) % c) * k + 1]);
+  return finishGraph(c * k, E2, pos, `connected caveman, ${c} caves of ${k}`);
+}
+function pathGraph(n) { const E = []; for (let i = 0; i + 1 < n; i++) E.push([i, i + 1]); return finishGraph(n, E, Array.from({ length: n }, (_, i) => [i, 0]), `path P${n}`); }
+function cycleGraph(n) { const E = []; for (let i = 0; i < n; i++) E.push([i, (i + 1) % n]); return finishGraph(n, E, circle(n), `cycle C${n}`); }
+function completeGraph(n) { const E = []; for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) E.push([i, j]); return finishGraph(n, E, circle(n), `complete graph K${n}`); }
+function forceLayout(n, edges, rng, iters = 300) {
+  const P = Array.from({ length: n }, () => [rng(), rng()]); const k = Math.sqrt(1 / n);
+  let t = 0.1;
+  for (let it = 0; it < iters; it++) {
+    const D = Array.from({ length: n }, () => [0, 0]);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      let dx = P[i][0] - P[j][0], dy = P[i][1] - P[j][1]; let d = Math.hypot(dx, dy) || 1e-4;
+      const f = k * k / d; dx /= d; dy /= d; D[i][0] += dx * f; D[i][1] += dy * f; D[j][0] -= dx * f; D[j][1] -= dy * f;
+    }
+    for (const [u, v] of edges) {
+      let dx = P[u][0] - P[v][0], dy = P[u][1] - P[v][1]; const d = Math.hypot(dx, dy) || 1e-4;
+      const f = d * d / k; dx /= d; dy /= d; D[u][0] -= dx * f; D[u][1] -= dy * f; D[v][0] += dx * f; D[v][1] += dy * f;
+    }
+    for (let i = 0; i < n; i++) { const d = Math.hypot(D[i][0], D[i][1]) || 1e-9; const s = Math.min(d, t) / d; P[i][0] += D[i][0] * s; P[i][1] += D[i][1] * s; }
+    t *= 0.985;
+  }
+  return P;
+}
+
+/* ---------- Fenwick tree for sampling active edges ---------- */
+class Fenwick {
+  constructor(n) { this.n = n; this.t = new Float64Array(n + 1); this.v = new Float64Array(n); this.total = 0; }
+  set(i, val) { const d = val - this.v[i]; if (!d) return; this.v[i] = val; this.total += d; for (let j = i + 1; j <= this.n; j += j & -j) this.t[j] += d; }
+  find(x) { let pos = 0, LOG = 1; while (LOG * 2 <= this.n) LOG *= 2; for (let s = LOG; s; s >>= 1) { if (pos + s <= this.n && this.t[pos + s] <= x) { pos += s; x -= this.t[pos]; } } return Math.min(pos, this.n - 1); }
+}
+
+/* ---------- the Axelrod process (edge-driven, Lanchier's convention) ---------- */
+function initialCultures(G, F, q, rng, mode) {
+  const s = new Uint8Array(G.n * F);
+  for (let i = 0; i < G.n * F; i++) s[i] = randInt(rng, q);
+  if (mode === 'shared') for (let x = 0; x < G.n; x++) s[x * F] = 0;               // Prop. 3.7: feature 1 shared by all
+  if (mode === 'interface') {                                                      // Prop. 3.6: two blocks differing in one feature
+    const j = Math.floor(G.n / 2);
+    for (let x = 0; x < G.n; x++) for (let f = 0; f < F; f++) s[x * F + f] = 0;
+    for (let x = j; x < G.n; x++) s[x * F] = 1;
+  }
+  return s;
+}
+const overlap = (s, F, u, v) => { let o = 0; for (let f = 0; f < F; f++) if (s[u * F + f] === s[v * F + f]) o++; return o; };
+function simulate(G, F, q, seed, mode, maxEvents = 3000000) {
+  const rng = mulberry32(seed * 7919 + 17);
+  const s0 = initialCultures(G, F, q, rng, mode), s = s0.slice();
+  const fw = new Fenwick(Math.max(1, G.m)), o = new Int32Array(G.m);
+  const upd = (k) => { const [u, v] = G.edges[k]; o[k] = overlap(s, F, u, v); fw.set(k, o[k] > 0 && o[k] < F ? o[k] : 0); };
+  for (let k = 0; k < G.m; k++) upd(k);
+  let cap = 1 << 16, ev = new Int32Array(cap * 3), times = new Float64Array(cap), E = 0, t = 0;
+  const diff = new Int32Array(F);
+  while (fw.total > 0.5 && E < maxEvents) {
+    t += -Math.log(1 - rng()) / (fw.total / F);
+    const k = fw.find(rng() * fw.total);
+    let [x, y] = G.edges[k]; if (rng() < 0.5) [x, y] = [y, x];
+    let nd = 0; for (let f = 0; f < F; f++) if (s[x * F + f] !== s[y * F + f]) diff[nd++] = f;
+    const f = diff[randInt(rng, nd)];
+    s[x * F + f] = s[y * F + f];
+    if (E >= cap) { const ev2 = new Int32Array(cap * 6); ev2.set(ev); ev = ev2; const t2 = new Float64Array(cap * 2); t2.set(times); times = t2; cap *= 2; }
+    ev[3 * E] = x; ev[3 * E + 1] = f; ev[3 * E + 2] = s[x * F + f]; times[E] = t; E++;
+    for (const [, kk] of G.adj[x]) upd(kk);
+  }
+  return { s0, ev, times, E, absorbed: fw.total < 0.5, tau: t, F, q };
+}
+
+/* ---------- diagnostics of a configuration ---------- */
+function analyse(G, F, s) {
+  const n = G.n, m = G.m, o = new Int32Array(m);
+  let nI = 0, nB = 0, nA = 0;
+  for (let k = 0; k < m; k++) { const [u, v] = G.edges[k]; o[k] = overlap(s, F, u, v); if (o[k] === F) nI++; else if (o[k] === 0) nB++; else nA++; }
+  const split = [0, 0, 0, 0];
+  for (const [a, b, c] of G.tris) split[(o[a] === 0) + (o[b] === 0) + (o[c] === 0)]++;
+  // domains = components of the interior graph
+  const p = Int32Array.from({ length: n }, (_, i) => i);
+  const fnd = (x) => { while (p[x] !== x) { p[x] = p[p[x]]; x = p[x]; } return x; };
+  for (let k = 0; k < m; k++) if (o[k] === F) { const [u, v] = G.edges[k]; p[fnd(u)] = fnd(v); }
+  const dom = new Int32Array(n), droot = new Map();
+  for (let x = 0; x < n; x++) { const r = fnd(x); if (!droot.has(r)) droot.set(r, droot.size); dom[x] = droot.get(r); }
+  const cultKey = (x) => { let c = 0; for (let f = 0; f < F; f++) c = c * 64 + s[x * F + f]; return c; };
+  const cul = new Float64Array(n), cset = new Map();
+  for (let x = 0; x < n; x++) { const c = cultKey(x); if (!cset.has(c)) cset.set(c, cset.size); cul[x] = cset.get(c); }
+  // Newman's categorical assortativity of a labelling
+  const assort = (lab) => {
+    let ein = 0; const vol = new Map();
+    for (let k = 0; k < m; k++) { const [u, v] = G.edges[k]; if (lab(u) === lab(v)) ein++; }
+    for (let x = 0; x < n; x++) vol.set(lab(x), (vol.get(lab(x)) || 0) + G.deg[x]);
+    let sq = 0; for (const vv of vol.values()) sq += (vv / (2 * m)) ** 2;
+    return sq < 1 - 1e-12 ? (ein / m - sq) / (1 - sq) : NaN;
+  };
+  const rDom = assort((x) => dom[x]), rCul = assort((x) => cul[x]);
+  let rF = 0, rFmax = -Infinity, cntF = 0;
+  for (let f = 0; f < F; f++) { const r = assort((x) => s[x * F + f]); if (!isNaN(r)) { rF += r; cntF++; rFmax = Math.max(rFmax, r); } }
+  rF = cntF ? rF / cntF : NaN;
+  // total pairwise overlap Q = sum_f sum_s N_{f,s}^2
+  let Qv = 0; for (let f = 0; f < F; f++) { const cnt = new Map(); for (let x = 0; x < n; x++) cnt.set(s[x * F + f], (cnt.get(s[x * F + f]) || 0) + 1); for (const c of cnt.values()) Qv += c * c; }
+  // open-wedge masses of G and of the interior graph
+  const degI = new Int32Array(n); for (let k = 0; k < m; k++) if (o[k] === F) { degI[G.edges[k][0]]++; degI[G.edges[k][1]]++; }
+  let wG = 0, wI = 0; for (let x = 0; x < n; x++) { wG += G.deg[x] * (G.deg[x] - 1) / 2; wI += degI[x] * (degI[x] - 1) / 2; }
+  const omegaG = wG - 3 * G.tris.length, omegaI = wI - 3 * split[0];
+  // feature-wise colouring check of the domain quotient (Theorem 5.1); meaningful when absorbed
+  let proper = true; for (let k = 0; k < m; k++) { const [u, v] = G.edges[k]; if (dom[u] !== dom[v]) for (let f = 0; f < F; f++) if (s[u * F + f] === s[v * F + f]) proper = false; }
+  return { o, nI, nB, nA, split, dom, ndom: droot.size, cul, ncul: cset.size, rDom, rCul, rF, rFmax, Q: Qv, omegaG, omegaI, proper };
+}
+
+/* replay the event log to obtain snapshots at chosen event indices */
+function framesFrom(G, run, nFrames = 320) {
+  const E = run.E, idx = new Set([0, E]);
+  if (E > 0) {
+    for (let j = 0; j < nFrames * 0.65; j++) idx.add(Math.min(E, Math.round(Math.pow(E, j / (nFrames * 0.65)))));
+    for (let j = 0; j < nFrames * 0.35; j++) idx.add(Math.round(E * j / (nFrames * 0.35)));
+  }
+  const list = [...idx].sort((a, b) => a - b), F = run.F, s = run.s0.slice(), frames = [];
+  let e = 0;
+  for (const target of list) {
+    while (e < target) { s[run.ev[3 * e] * F + run.ev[3 * e + 1]] = run.ev[3 * e + 2]; e++; }
+    frames.push({ e: target, t: target === 0 ? 0 : run.times[target - 1], s: s.slice() });
+  }
+  return frames;
+}
+
+if (typeof module !== 'undefined') module.exports = { mulberry32, finishGraph, triLattice, gridGraph, wattsStrogatz, erdosRenyi, caveman, pathGraph, cycleGraph, completeGraph, simulate, analyse, framesFrom, overlap };
+
+/* ---------- data ---------- */
+const PRE = {"karate":{"n":34,"edges":[[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,10],[0,11],[0,12],[0,13],[0,17],[0,19],[0,21],[0,31],[1,2],[1,3],[1,7],[1,13],[1,17],[1,19],[1,21],[1,30],[2,3],[2,7],[2,8],[2,9],[2,13],[2,27],[2,28],[2,32],[3,7],[3,12],[3,13],[4,6],[4,10],[5,6],[5,10],[5,16],[6,16],[8,30],[8,32],[8,33],[9,33],[13,33],[14,32],[14,33],[15,32],[15,33],[18,32],[18,33],[19,33],[20,32],[20,33],[22,32],[22,33],[23,25],[23,27],[23,29],[23,32],[23,33],[24,25],[24,27],[24,31],[25,31],[26,29],[26,33],[27,33],[28,31],[28,33],[29,32],[29,33],[30,32],[30,33],[31,32],[31,33],[32,33]],"pos":[[0.3797,0.3731],[0.4544,0.4326],[0.5272,0.5579],[0.5983,0.3404],[0.507,0.1365],[0.1315,0.2127],[0.2752,0.1434],[0.7118,0.3483],[0.638,0.5566],[0.9106,0.5825],[0.3568,0.1776],[0.0,0.3755],[0.6585,0.1808],[0.6818,0.4849],[0.8498,0.9265],[1.0,0.7317],[0.0599,0.0],[0.1111,0.439],[0.657,1.0],[0.4065,0.5784],[0.5307,0.9841],[0.1626,0.333],[0.9534,0.8057],[0.4157,0.9297],[0.0271,0.739],[0.1094,0.8631],[0.9724,0.9045],[0.3374,0.7697],[0.4502,0.7537],[0.7135,0.949],[0.7829,0.603],[0.3191,0.6519],[0.6293,0.7871],[0.6775,0.7507]],"labels":["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","29","30","31","32","33"]},"florentine":{"n":15,"edges":[[0,1],[1,5],[1,6],[1,7],[1,8],[1,9],[2,3],[2,4],[2,5],[3,4],[3,11],[4,6],[4,11],[6,7],[7,12],[8,13],[8,12],[9,10],[11,12],[12,14]],"pos":[[0.3538,0.2074],[0.4854,0.4093],[0.0,0.6323],[0.0685,0.8769],[0.1904,0.7499],[0.1708,0.4254],[0.3417,0.5738],[0.5486,0.6126],[0.7319,0.5766],[0.6348,0.2125],[0.7083,0.0],[0.3462,0.9252],[0.6186,0.8172],[1.0,0.5668],[0.7754,1.0]],"labels":["Acciaiuoli","Medici","Castellani","Peruzzi","Strozzi","Barbadori","Ridolfi","Tornabuoni","Albizzi","Salviati","Pazzi","Bischeri","Guadagni","Ginori","Lamberteschi"]},"lesmis":{"n":77,"edges":[[0,1],[1,2],[1,3],[1,4],[1,5],[1,6],[1,7],[1,8],[1,9],[1,10],[2,3],[2,10],[3,10],[10,11],[10,12],[10,13],[10,14],[10,15],[10,23],[10,24],[10,25],[10,26],[10,27],[10,28],[10,29],[10,31],[10,32],[10,33],[10,34],[10,35],[10,36],[10,37],[10,38],[10,43],[10,44],[10,48],[10,49],[10,51],[10,55],[10,58],[10,64],[10,68],[10,69],[10,70],[10,71],[10,72],[12,23],[16,17],[16,18],[16,19],[16,20],[16,21],[16,22],[16,23],[17,18],[17,19],[17,20],[17,21],[17,22],[17,23],[17,26],[17,55],[18,19],[18,20],[18,21],[18,22],[18,23],[19,20],[19,21],[19,22],[19,23],[20,21],[20,22],[20,23],[21,22],[21,23],[22,23],[23,24],[23,25],[23,27],[23,29],[23,30],[23,31],[24,25],[24,26],[24,27],[24,41],[24,42],[24,50],[24,68],[24,69],[24,70],[25,26],[25,27],[25,39],[25,40],[25,41],[25,42],[25,48],[25,55],[25,68],[25,69],[25,70],[25,71],[25,75],[26,27],[26,43],[26,49],[26,51],[26,54],[26,55],[26,72],[27,28],[27,29],[27,31],[27,33],[27,43],[27,48],[27,58],[27,68],[27,69],[27,70],[27,71],[27,72],[28,44],[28,45],[29,34],[29,35],[29,36],[29,37],[29,38],[30,31],[34,35],[34,36],[34,37],[34,38],[35,36],[35,37],[35,38],[36,37],[36,38],[37,38],[39,52],[39,55],[41,42],[41,55],[41,57],[41,62],[41,68],[41,69],[41,70],[41,71],[41,75],[46,47],[46,48],[48,55],[48,57],[48,58],[48,59],[48,60],[48,61],[48,62],[48,63],[48,64],[48,65],[48,66],[48,68],[48,69],[48,71],[48,73],[48,74],[48,75],[48,76],[49,50],[49,51],[49,54],[49,55],[49,56],[51,52],[51,53],[51,54],[51,55],[54,55],[55,56],[55,57],[55,58],[55,59],[55,61],[55,62],[55,63],[55,64],[55,65],[57,58],[57,59],[57,61],[57,62],[57,63],[57,64],[57,65],[57,67],[58,59],[58,60],[58,61],[58,62],[58,63],[58,64],[58,65],[58,66],[58,70],[58,76],[59,60],[59,61],[59,62],[59,63],[59,64],[59,65],[59,66],[60,61],[60,62],[60,63],[60,64],[60,65],[60,66],[61,62],[61,63],[61,64],[61,65],[61,66],[62,63],[62,64],[62,65],[62,66],[62,76],[63,64],[63,65],[63,66],[63,76],[64,65],[64,66],[64,76],[65,66],[65,76],[66,76],[68,69],[68,70],[68,71],[68,75],[69,70],[69,71],[69,75],[70,71],[70,75],[71,75],[73,74]],"pos":[[0.5043,0.0],[0.5909,0.1843],[0.5694,0.2521],[0.4857,0.2155],[0.8484,0.1769],[0.4257,0.0091],[0.5871,0.0054],[0.8038,0.1196],[0.6705,0.0285],[0.7448,0.0687],[0.4737,0.4148],[0.3064,0.2561],[0.2648,0.3168],[0.7249,0.3865],[0.7171,0.4309],[0.6384,0.2821],[0.0669,0.3621],[0.1783,0.5531],[0.0069,0.5088],[0.0618,0.468],[0.0,0.4417],[0.0309,0.3939],[0.0387,0.5515],[0.2158,0.4245],[0.2726,0.5026],[0.327,0.5807],[0.4129,0.4867],[0.376,0.4578],[0.3407,0.2403],[0.4304,0.3394],[0.0654,0.252],[0.2537,0.3485],[0.4019,0.2245],[0.3425,0.302],[0.681,0.3535],[0.6532,0.3058],[0.5848,0.3418],[0.6417,0.407],[0.5391,0.2888],[0.3822,0.7786],[0.149,0.7387],[0.3096,0.6913],[0.157,0.6902],[0.5588,0.3954],[0.4473,0.2499],[0.1946,0.0741],[0.8258,0.66],[1.0,0.7728],[0.531,0.6452],[0.4702,0.528],[0.1324,0.6213],[0.6316,0.5033],[0.7912,0.6723],[0.9047,0.4806],[0.674,0.5922],[0.4456,0.621],[0.2747,0.7712],[0.4439,0.7843],[0.5583,0.6003],[0.5177,0.7947],[0.6789,0.7976],[0.57,0.7974],[0.5193,0.7399],[0.6261,0.7177],[0.6058,0.6074],[0.602,0.7563],[0.7132,0.7467],[0.4242,1.0],[0.4389,0.5557],[0.3974,0.5822],[0.3635,0.5294],[0.5086,0.5437],[0.3505,0.3523],[0.5673,0.8797],[0.4221,0.8695],[0.3544,0.7258],[0.7394,0.6802]],"labels":["Napoleon","Myriel","MlleBaptistine","MmeMagloire","CountessDeLo","Geborand","Champtercier","Cravatte","Count","OldMan","Valjean","Labarre","Marguerite","MmeDeR","Isabeau","Gervais","Listolier","Tholomyes","Fameuil","Blacheville","Favourite","Dahlia","Zephine","Fantine","MmeThenardier","Thenardier","Cosette","Javert","Fauchelevent","Bamatabois","Perpetue","Simplice","Scaufflaire","Woman1","Judge","Champmathieu","Brevet","Chenildieu","Cochepaille","Pontmercy","Boulatruelle","Eponine","Anzelma","Woman2","MotherInnocent","Gribier","MmeBurgon","Jondrette","Gavroche","Gillenormand","Magnon","MlleGillenormand","MmePontmercy","MlleVaubois","LtGillenormand","Marius","BaronessT","Mabeuf","Enjolras","Combeferre","Prouvaire","Feuilly","Courfeyrac","Bahorel","Bossuet","Joly","Grantaire","MotherPlutarch","Gueulemer","Babet","Claquesous","Montparnasse","Toussaint","Child1","Child2","Brujon","MmeHucheloup"]}};
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (x, d = 3) => (x === null || x === undefined || isNaN(x)) ? '—' : x.toFixed(d);
+
+const SCEN = {
+  fig1:      { g: 'karate', F: 3, q: 6, seed: 2, init: 'random', note: 'The karate club with F = 3 and q = 6, as in Figure 1 of the paper. Several disconnected domains end up with the same culture, so r_cult < r_dom (Theorem 6.1).' },
+  tri:       { g: 'tri', n: 252, F: 3, q: 10, seed: 1, init: 'random', note: 'Triangular lattice: every edge lies in triangles. Watch the triangles with exactly one boundary edge (red curve) disappear at absorption (Theorem 4.2).' },
+  ws:        { g: 'ws', n: 100, p: 0.0, F: 3, q: 12, seed: 1, init: 'random', note: 'Ring lattice with k = 6 (Watts–Strogatz with p = 0). Raise p to destroy triangles and shorten paths, as in Figure 3 of the paper.' },
+  cave:      { g: 'cave', n: 100, F: 3, q: 12, seed: 1, init: 'random', note: 'Connected caveman graph: ten 10-cliques joined in a ring. Each cave is almost a clique, so it carries at most q domains with pairwise feature-disjoint cultures (Corollary 5.8).' },
+  interface: { g: 'path', n: 40, F: 3, q: 4, seed: 1, init: 'interface', note: 'Proposition 3.6: two blocks of cultures differing in one feature. The single active edge performs a random walk; E τ = j(n − j)F/(F − 1) = 600 here, so the n² order of the bound in Corollary 3.3 is attained.' },
+  shared:    { g: 'tri', n: 252, F: 3, q: 10, seed: 2, init: 'shared', note: 'Proposition 3.7: feature 1 is initially shared by everybody, so no boundary edge can ever form and the dynamics end in consensus.' },
+  q2:        { g: 'tri', n: 252, F: 2, q: 2, seed: 3, init: 'random', note: 'q = 2: each culture has a unique feature-disjoint partner, so the domain quotient is bipartite and no triangle carries three boundary edges (Corollary 5.8(ii)).' },
+  explore:   { g: 'er', n: 100, F: 3, q: 6, seed: 7, init: 'random', note: 'Choose any network and parameters.' },
+};
+
+let G = null, run = null, frames = [], stats = [], cur = 0, playing = false, timer = null, selected = -1, view = 'both', Q0 = 0, bound = 0;
+
+function buildGraph() {
+  const g = $('gtype').value, n = +$('n').value, rng = mulberry32(+$('seed').value * 31 + 5);
+  if (g === 'karate' || g === 'florentine' || g === 'lesmis') { const P = PRE[g]; return finishGraph(P.n, P.edges, P.pos, { karate: "Zachary's karate club", florentine: 'Florentine families', lesmis: 'Les Misérables' }[g], P.labels); }
+  if (g === 'tri') { const r = Math.max(3, Math.round(Math.sqrt(n / 1.3))); return triLattice(r, Math.max(3, Math.round(n / r))); }
+  if (g === 'grid') { const r = Math.max(2, Math.round(Math.sqrt(n))); return gridGraph(r, Math.max(2, Math.round(n / r))); }
+  if (g === 'ws') return wattsStrogatz(n, 6, +$('p').value, rng);
+  if (g === 'er') return erdosRenyi(n, 6, rng);
+  if (g === 'cave') return caveman(Math.max(3, Math.round(n / 10)), 10);
+  if (g === 'path') return pathGraph(n);
+  if (g === 'cycle') return cycleGraph(n);
+  if (g === 'complete') return completeGraph(Math.min(n, 60));
+}
+
+function rebuild() {
+  stop();
+  G = buildGraph();
+  const F = +$('F').value, q = +$('q').value, seed = +$('seed').value;
+  let init = $('init').value; if (init === 'interface' && $('gtype').value !== 'path') init = 'random';
+  run = simulate(G, F, q, seed, init);
+  frames = framesFrom(G, run);
+  stats = frames.map((fr) => analyse(G, F, fr.s));
+  Q0 = stats[0].Q; bound = F * (F * G.n * G.n - Q0) / 2;
+  $('time').max = frames.length - 1; cur = 0; selected = -1;
+  $('netinfo').textContent = `${G.name}: n = ${G.n}, m = ${G.m}, ${G.tris.length} triangles`;
+  draw();
+  if ($('autoplay').checked) play();
+}
+
+/* ---------- colours ---------- */
+function cultureColour(s, F, q, x) {
+  let code = 0; for (let f = 0; f < F; f++) code = code * q + s[x * F + f];
+  const h = (code * 137.508) % 360, l = 40 + ((code * 7) % 4) * 7, sat = 52 + ((code * 3) % 3) * 12;
+  return `hsl(${h.toFixed(0)}, ${sat}%, ${l}%)`;
+}
+
+/* ---------- canvas helpers ---------- */
+function prep(cv) { const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); } const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h); return [c, w, h]; }
+function fitter(pos, w, h, pad = 18) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const [x, y] of pos) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const sx = (w - 2 * pad) / Math.max(1e-9, x1 - x0), sy = (h - 2 * pad) / Math.max(1e-9, y1 - y0), sc = Math.min(sx, sy);
+  const ox = (w - sc * (x1 - x0)) / 2, oy = (h - sc * (y1 - y0)) / 2;
+  return ([x, y]) => [ox + (x - x0) * sc, oy + (y - y0) * sc];
+}
+
+/* ---------- graph view ---------- */
+let screenPos = [];
+function drawGraph() {
+  const cv = $('net'), [c, w, h] = prep(cv), st = stats[cur], fr = frames[cur], F = run.F, q = run.q;
+  const map = fitter(G.pos, w, h, G.n > 150 ? 10 : 18); screenPos = G.pos.map(map);
+  const ink = css('--ink'), acc = css('--accent'), mut = css('--muted');
+  const lw = G.n > 150 ? 0.8 : 1.3;
+  for (let k = 0; k < G.m; k++) {
+    const [u, v] = G.edges[k], [ax, ay] = screenPos[u], [bx, by] = screenPos[v], o = st.o[k];
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by);
+    if (o === F) { c.setLineDash([]); c.strokeStyle = ink; c.globalAlpha = 0.85; c.lineWidth = lw; }
+    else if (o === 0) { c.setLineDash([3, 3]); c.strokeStyle = mut; c.globalAlpha = 0.55; c.lineWidth = lw * 0.7; }
+    else { c.setLineDash([]); c.strokeStyle = acc; c.globalAlpha = 0.95; c.lineWidth = lw * 1.6; }
+    c.stroke();
+  }
+  c.setLineDash([]); c.globalAlpha = 1;
+  const r = Math.max(2.4, Math.min(8, 0.33 * Math.min(w, h) / Math.sqrt(G.n)));
+  for (let x = 0; x < G.n; x++) {
+    const [px, py] = screenPos[x];
+    c.beginPath(); c.arc(px, py, r, 0, 2 * Math.PI); c.fillStyle = cultureColour(fr.s, F, q, x); c.fill();
+    c.lineWidth = 0.8; c.strokeStyle = css('--panel'); c.stroke();
+    if (x === selected) { c.beginPath(); c.arc(px, py, r + 4, 0, 2 * Math.PI); c.strokeStyle = ink; c.lineWidth = 1.6; c.stroke(); }
+  }
+}
+
+/* ---------- domain-quotient view ---------- */
+function drawQuotient() {
+  const cv = $('net2'), [c, w, h] = prep(cv), st = stats[cur], fr = frames[cur], F = run.F, q = run.q;
+  const map = fitter(G.pos, w, h, 26), P = G.pos.map(map);
+  const k = st.ndom, size = new Float64Array(k), cx = new Float64Array(k), cy = new Float64Array(k), rep = new Int32Array(k).fill(-1);
+  for (let x = 0; x < G.n; x++) { const d = st.dom[x]; size[d]++; cx[d] += P[x][0]; cy[d] += P[x][1]; if (rep[d] < 0) rep[d] = x; }
+  for (let d = 0; d < k; d++) { cx[d] /= size[d]; cy[d] /= size[d]; }
+  const W = new Map(), act = new Set();
+  for (let e = 0; e < G.m; e++) {
+    const [u, v] = G.edges[e], a = st.dom[u], b = st.dom[v]; if (a === b) continue;
+    const key = Math.min(a, b) * 100000 + Math.max(a, b); W.set(key, (W.get(key) || 0) + 1);
+    if (st.o[e] > 0) act.add(key);
+  }
+  const maxW = Math.max(1, ...W.values()), maxS = Math.max(...size), Rmax = Math.min(w, h) * (k === 1 ? 0.22 : 0.11);
+  for (const [key, wt] of W) {
+    const a = Math.floor(key / 100000), b = key % 100000;
+    c.beginPath(); c.moveTo(cx[a], cy[a]); c.lineTo(cx[b], cy[b]);
+    const isAct = act.has(key);
+    c.setLineDash(isAct ? [] : [4, 3]); c.strokeStyle = isAct ? css('--accent') : css('--muted');
+    c.globalAlpha = isAct ? 0.9 : 0.6; c.lineWidth = 0.6 + 2.4 * Math.log2(1 + wt) / Math.log2(1 + maxW); c.stroke();
+  }
+  c.setLineDash([]); c.globalAlpha = 1;
+  const order = [...Array(k).keys()].sort((a, b) => size[b] - size[a]);
+  const showLab = (d) => k <= 60 || size[d] >= 3;
+  for (const d of order) {
+    const rad = Math.max(3, Rmax * Math.sqrt(size[d] / maxS));
+    c.beginPath(); c.arc(cx[d], cy[d], rad, 0, 2 * Math.PI); c.fillStyle = cultureColour(fr.s, F, q, rep[d]); c.globalAlpha = 0.92; c.fill(); c.globalAlpha = 1;
+    c.lineWidth = 1; c.strokeStyle = css('--panel'); c.stroke();
+  }
+  c.font = `11px ${css('--mono').split(',')[0]}`; c.fillStyle = css('--ink'); c.textAlign = 'center'; c.textBaseline = 'top';
+  for (const d of order) if (showLab(d)) { const rad = Math.max(3, Rmax * Math.sqrt(size[d] / maxS)); c.fillText(String(size[d]), cx[d], cy[d] + rad + 2); }
+  $('qcap').textContent = `Domain quotient at t = ${frames[cur].t.toFixed(1)}: ${k} domain${k > 1 ? 's' : ''}, ${st.ncul} culture${st.ncul > 1 ? 's' : ''}. Node area is proportional to domain size (labelled below each node${k > 60 ? ', for domains of size ≥ 3' : ''}); colour is culture; dashed links carry only boundary edges, solid red links still carry active edges, and width grows with the number of host edges. Weighted attribute assortativity of the quotient with respect to culture (self-loops weighted by interior edges): r = ${fmt(st.rCul)}.`;
+}
+
+/* ---------- charts ---------- */
+function chart(cv, series, opts) {
+  const [c, w, h] = prep(cv), m = { l: 44, r: 10, t: 24, b: 26 };
+  const T = frames.map((f) => f.t), tmax = Math.max(1e-9, T[T.length - 1]);
+  const X = (t) => m.l + (w - m.l - m.r) * Math.log1p(t) / Math.log1p(tmax);
+  let lo = opts.ymin, hi = opts.ymax;
+  if (lo === undefined || hi === undefined) { const all = series.flatMap((s) => s.y).filter((v) => !isNaN(v)); lo = lo ?? Math.min(0, ...all); hi = hi ?? Math.max(1e-9, ...all) * 1.05; }
+  const Y = (v) => h - m.b - (h - m.t - m.b) * (v - lo) / Math.max(1e-12, hi - lo);
+  c.strokeStyle = css('--rule'); c.lineWidth = 1; c.beginPath(); c.moveTo(m.l, m.t); c.lineTo(m.l, h - m.b); c.lineTo(w - m.r, h - m.b); c.stroke();
+  c.fillStyle = css('--muted'); c.font = `10px ${css('--mono').split(',')[0]}`; c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (const v of [lo, (lo + hi) / 2, hi]) { c.fillText(Math.abs(hi) >= 100 ? v.toFixed(0) : v.toFixed(2), m.l - 4, Y(v)); }
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  for (const tk of [0, 1, 10, 100, 1000, 10000, 100000]) if (tk <= tmax) c.fillText(String(tk), X(tk), h - m.b + 4);
+  c.textAlign = 'right'; c.fillText('time (log scale)', w - m.r, h - m.b + 14);
+  for (const s of series) {
+    c.beginPath(); let started = false;
+    s.y.forEach((v, i) => { if (isNaN(v)) { started = false; return; } const px = X(T[i]), py = Y(v); if (!started) { c.moveTo(px, py); started = true; } else c.lineTo(px, py); });
+    c.strokeStyle = s.col; c.lineWidth = s.lw || 2; c.setLineDash(s.dash || []); c.stroke(); c.setLineDash([]);
+  }
+  const xc = X(frames[cur].t); c.strokeStyle = css('--ink'); c.globalAlpha = 0.35; c.lineWidth = 1; c.beginPath(); c.moveTo(xc, m.t); c.lineTo(xc, h - m.b); c.stroke(); c.globalAlpha = 1;
+  // legend
+  c.textAlign = 'left'; c.textBaseline = 'middle'; c.font = `11px ${css('--body').split(',')[0]}`; let lx = m.l + 8;
+  for (const s of series) { c.strokeStyle = s.col; c.lineWidth = 2; c.setLineDash(s.dash || []); c.beginPath(); c.moveTo(lx, 9); c.lineTo(lx + 16, 9); c.stroke(); c.setLineDash([]); c.fillStyle = css('--ink'); c.fillText(s.name, lx + 20, 9); lx += 28 + c.measureText(s.name).width; }
+}
+const COL = () => ({ ink: css('--ink'), acc: css('--accent'), good: css('--good'), warn: css('--warn'), blue: '#3f74b5', mut: css('--muted') });
+function drawCharts() {
+  const C = COL(), F = run.F;
+  if (!$('p-et').hidden) {
+    chart($('cE'), [
+      { name: 'interior', col: C.ink, y: stats.map((s) => s.nI / G.m) },
+      { name: 'active', col: C.acc, y: stats.map((s) => s.nA / G.m) },
+      { name: 'boundary', col: C.blue, y: stats.map((s) => s.nB / G.m) }], { ymin: 0, ymax: 1 });
+    const T = Math.max(1, G.tris.length);
+    chart($('cT'), [
+      { name: '0 boundary', col: C.good, y: stats.map((s) => s.split[0] / T) },
+      { name: 'exactly 1', col: C.acc, y: stats.map((s) => s.split[1] / T), lw: 2.6 },
+      { name: '2', col: C.warn, y: stats.map((s) => s.split[2] / T) },
+      { name: '3', col: C.blue, y: stats.map((s) => s.split[3] / T) }], { ymin: 0, ymax: 1 });
+    const st = stats[cur];
+    $('etCaption').textContent = G.tris.length ? `At t = ${frames[cur].t.toFixed(1)}: ${st.nI} interior, ${st.nA} active and ${st.nB} boundary edges; of the ${G.tris.length} triangles, ${st.split[0]}, ${st.split[1]}, ${st.split[2]} and ${st.split[3]} carry 0, 1, 2 and 3 boundary edges. In an absorbing state no triangle carries exactly one boundary edge (Theorem 4.2), and with q = 2 none carries three (Corollary 5.8).` : `At t = ${frames[cur].t.toFixed(1)}: ${st.nI} interior, ${st.nA} active and ${st.nB} boundary edges. This graph has no triangles.`;
+  }
+  if (!$('p-da').hidden) {
+    chart($('cD'), [
+      { name: 'domains', col: C.ink, y: stats.map((s) => s.ndom) },
+      { name: 'cultures', col: C.acc, y: stats.map((s) => s.ncul), dash: [5, 3] }], { ymin: 0 });
+    chart($('cR'), [
+      { name: 'mean r_f', col: C.blue, y: stats.map((s) => s.rF) },
+      { name: 'r_cult', col: C.acc, y: stats.map((s) => s.rCul) },
+      { name: 'r_dom', col: C.ink, y: stats.map((s) => s.rDom), dash: [5, 3] }], {});
+    chart($('cQ'), [{ name: 'Q(σ_t) / (F n²)', col: C.good, y: stats.map((s) => s.Q / (F * G.n * G.n)) }], { ymin: 0, ymax: 1 });
+    const last = stats[stats.length - 1];
+    $('daCaption').textContent = `Q is the total pairwise overlap, a submartingale (Theorem 3.2). This run ${run.absorbed ? `was absorbed at τ = ${run.tau.toFixed(1)}` : `was stopped at t = ${run.tau.toFixed(1)} before absorption`}, against the bound F(Fn² − Q(σ₀))/2 = ${bound.toFixed(0)} of Corollary 3.3 on E τ. Final state: ${last.ndom} domain(s), ${last.ncul} culture(s); r_f ≤ r_cult ≤ r_dom holds at absorption (Theorem 6.1).`;
+  }
+}
+
+/* ---------- status chips ---------- */
+function chips() {
+  const st = stats[cur], last = cur === frames.length - 1, F = run.F;
+  const items = [];
+  items.push(['', `t = ${frames[cur].t.toFixed(1)}`]); items.push(['', `events ${frames[cur].e} / ${run.E}`]);
+  items.push(['', `domains ${st.ndom} · cultures ${st.ncul}`]);
+  if (last && run.absorbed) {
+    items.push(['good', `absorbed at τ = ${run.tau.toFixed(1)} ≤ bound ${bound.toFixed(0)} on E τ`]);
+    items.push([st.split[1] === 0 ? 'good' : 'crit', `triangles with one boundary edge: ${st.split[1]} (Thm 4.2)`]);
+    items.push([st.proper ? 'good' : 'crit', `every feature properly colours the quotient${st.proper ? ' ✓' : ' ✗'} (Thm 5.1)`]);
+    items.push([st.omegaI <= st.omegaG ? 'good' : 'crit', `ω(G_I) = ${st.omegaI} ≤ ω(G) = ${st.omegaG} (Cor 4.3)`]);
+    if (st.ndom > 1) { const ok = st.rFmax <= st.rCul + 1e-9 && st.rCul <= st.rDom + 1e-9; items.push([ok ? 'good' : 'crit', `r_f ≤ r_cult ≤ r_dom ${ok ? '✓' : '✗'} (Thm 6.1)`]); }
+    else items.push(['good', 'consensus']);
+  } else {
+    items.push([st.nA ? 'warn' : '', `active edges ${st.nA}`]);
+    if (G.tris.length) items.push([st.split[1] ? 'warn' : '', `triangles with one boundary edge: ${st.split[1]}`]);
+  }
+  $('chips').innerHTML = items.map(([cl, t]) => `<span class="chip ${cl}">${t}</span>`).join('');
+}
+
+/* ---------- selected agent ---------- */
+function inspect() {
+  if (selected < 0) { $('inspect').textContent = 'Click a vertex in the graph view to inspect its culture and its neighbours.'; return; }
+  const fr = frames[cur], st = stats[cur], F = run.F, x = selected;
+  const cult = (y) => '(' + Array.from({ length: F }, (_, f) => fr.s[y * F + f] + 1).join(', ') + ')';
+  const lab = (y) => G.labels ? G.labels[y] : String(y);
+  let dsize = 0; for (let y = 0; y < G.n; y++) if (st.dom[y] === st.dom[x]) dsize++;
+  const lines = [`vertex ${lab(x)}   culture ${cult(x)}   domain of size ${dsize}   degree ${G.deg[x]}`, 'neighbours (overlap with this vertex):'];
+  for (const [y] of G.adj[x]) { const o = overlap(fr.s, F, x, y); lines.push(`  ${lab(y).padEnd(14)} ${cult(y)}   ${o}/${F}  ${o === F ? 'interior' : o === 0 ? 'boundary' : 'active'}`); }
+  $('inspect').textContent = lines.join('\n');
+}
+
+/* ---------- drawing and playback ---------- */
+function draw() {
+  if (!frames.length) return;
+  $('time').value = cur; $('timeVal').textContent = `t = ${frames[cur].t.toFixed(1)}`;
+  drawGraph(); drawQuotient(); drawCharts(); chips(); inspect();
+  $('caption').textContent = SCEN[$('scenario').value].note;
+}
+function play() { if (playing) return; playing = true; $('play').textContent = 'Pause'; if (cur >= frames.length - 1) cur = 0; tick(); }
+function stop() { playing = false; $('play').textContent = 'Play'; if (timer) clearTimeout(timer); timer = null; }
+function tick() { if (!playing) return; draw(); if (cur >= frames.length - 1) { stop(); return; } cur++; timer = setTimeout(tick, 1000 / +$('speed').value); }
+
+/* ---------- controls ---------- */
+function setView(v) {
+  view = v; for (const [id, val] of [['vBo', 'both'], ['vGr', 'graph'], ['vQu', 'quot']]) $(id).setAttribute('aria-pressed', String(v === val));
+  $('netbox').classList.toggle('hidden', v === 'quot'); $('net2box').classList.toggle('hidden', v === 'graph');
+  document.querySelector('.app').classList.toggle('both', v === 'both'); draw();
+}
+function applyScenario() {
+  const S = SCEN[$('scenario').value];
+  $('gtype').value = S.g; if (S.n) $('n').value = S.n; if (S.p !== undefined) $('p').value = S.p;
+  $('F').value = S.F; $('q').value = S.q; $('seed').value = S.seed; $('init').value = S.init; syncLabels(); rebuild();
+}
+function syncLabels() {
+  for (const id of ['n', 'p', 'F', 'q', 'speed']) $(id + 'Val').textContent = $(id).value;
+  const g = $('gtype').value; $('nRow').classList.toggle('hidden', ['karate', 'florentine', 'lesmis'].includes(g)); $('pRow').classList.toggle('hidden', g !== 'ws');
+}
+let deb = null; const later = () => { syncLabels(); clearTimeout(deb); deb = setTimeout(rebuild, 250); };
+window.addEventListener('DOMContentLoaded', () => {
+  $('scenario').addEventListener('change', applyScenario);
+  for (const id of ['gtype', 'n', 'p', 'F', 'q', 'seed', 'init']) $(id).addEventListener('input', later);
+  $('reseed').addEventListener('click', () => { $('seed').value = 1 + Math.floor(Math.random() * 9999); later(); });
+  $('speed').addEventListener('input', syncLabels);
+  $('play').addEventListener('click', () => (playing ? stop() : play()));
+  $('step').addEventListener('click', () => { stop(); cur = Math.min(frames.length - 1, cur + 1); draw(); });
+  $('restart').addEventListener('click', () => { stop(); cur = 0; draw(); });
+  $('toEnd').addEventListener('click', () => { stop(); cur = frames.length - 1; draw(); });
+  $('time').addEventListener('input', () => { stop(); cur = +$('time').value; draw(); });
+  $('vBo').addEventListener('click', () => setView('both')); $('vGr').addEventListener('click', () => setView('graph')); $('vQu').addEventListener('click', () => setView('quot'));
+  for (const [tab, panel] of [['tab-et', 'p-et'], ['tab-da', 'p-da'], ['tab-nt', 'p-nt']]) $(tab).addEventListener('click', () => {
+    for (const [t2, p2] of [['tab-et', 'p-et'], ['tab-da', 'p-da'], ['tab-nt', 'p-nt']]) { $(t2).setAttribute('aria-selected', String(t2 === tab)); $(p2).hidden = p2 !== panel; }
+    drawCharts();
+  });
+  $('net').addEventListener('click', (ev) => {
+    const r = $('net').getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+    let best = -1, bd = 400; screenPos.forEach(([px, py], i) => { const d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; best = i; } });
+    selected = best; draw();
+  });
+  window.addEventListener('resize', () => draw());
+  syncLabels(); setView('both'); applyScenario();
+});
+
+</script>
+</body>
+</html>
