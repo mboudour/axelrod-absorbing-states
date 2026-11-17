@@ -596,7 +596,7 @@ function chart(cv, series, opts) {
   c.textAlign = 'right'; c.fillText('time (log scale)', w - m.r, h - m.b + 14);
   for (const s of series) {
     c.beginPath(); let started = false;
-    s.y.forEach((v, i) => { if (isNaN(v)) { started = false; return; } const px = X(T[i]), py = Y(v); if (!started) { c.moveTo(px, py); started = true; } else c.lineTo(px, py); });
+    s.y.forEach((v, i) => { if (i > cur || isNaN(v)) { started = false; return; } const px = X(T[i]), py = Y(v); if (!started) { c.moveTo(px, py); started = true; } else c.lineTo(px, py); });
     c.strokeStyle = s.col; c.lineWidth = s.lw || 2; c.setLineDash(s.dash || []); c.stroke(); c.setLineDash([]);
   }
   const xc = X(frames[cur].t); c.strokeStyle = css('--ink'); c.globalAlpha = 0.35; c.lineWidth = 1; c.beginPath(); c.moveTo(xc, m.t); c.lineTo(xc, h - m.b); c.stroke(); c.globalAlpha = 1;
