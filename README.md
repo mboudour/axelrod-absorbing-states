@@ -1,6 +1,7 @@
 # Absorbing States of the Axelrod Model
 
-Code for *Triadic and Assortative Structure of Absorbing States in the Axelrod Model* (M. Boudourides, manuscript, 2026).
+Code for *Triadic and Assortative Structure of Absorbing States in the Axelrod Model* (M. Boudourides, 2026),
+arXiv:2611.18719, [https://doi.org/10.48550/arXiv.2611.18719](https://doi.org/10.48550/arXiv.2611.18719).
 
 **Setting.** Axelrod's model of cultural dissemination on a finite graph G = (V, E): each vertex carries a
 culture in [q]^F, neighbours interact at a rate proportional to their overlap (number of shared features),
